@@ -1,14 +1,15 @@
-package com.atguigu;
+package com.atguigu.app.ods;
 
 import com.alibaba.ververica.cdc.connectors.mysql.MySQLSource;
 import com.alibaba.ververica.cdc.connectors.mysql.table.StartupOptions;
 import com.alibaba.ververica.cdc.debezium.DebeziumSourceFunction;
-import com.alibaba.ververica.cdc.debezium.StringDebeziumDeserializationSchema;
-import org.apache.flink.runtime.state.filesystem.FsStateBackend;
+import com.atguigu.app.func.MyDebeziumDeserializationSchema;
+import com.atguigu.utils.MyKafkaUtil;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer;
 
-public class FlinkDataStream {
+public class FlinkCDC {
 
     public static void main(String[] args) throws Exception {
 
@@ -16,6 +17,7 @@ public class FlinkDataStream {
 
         //1.获取执行环境
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        //如果读取的是Kafka中数据,则需要与Kafka的分区数保持一致
         env.setParallelism(1);
 
         //设置CK & 状态后端
@@ -30,14 +32,14 @@ public class FlinkDataStream {
                 .username("root")
                 .password("000000")
                 .databaseList("gmall-210108-flink")
-                .tableList("gmall-210108-flink.base_trademark")
-                .startupOptions(StartupOptions.initial())
-                .deserializer(new StringDebeziumDeserializationSchema())
+                .startupOptions(StartupOptions.latest())
+                .deserializer(new MyDebeziumDeserializationSchema())
                 .build();
         DataStreamSource<String> streamSource = env.addSource(sourceFunction);
 
-        //3.打印
-        streamSource.print();
+        //3.将数据写入Kafka
+        String topic = "ods_base_db";
+        streamSource.addSink(MyKafkaUtil.getKafkaProducer(topic));
 
         //4.启动
         env.execute();

@@ -11,6 +11,7 @@
     <modules>
         <module>Test</module>
         <module>gmall-flink-cdc</module>
+        <module>gmall-realtime</module>
     </modules>
 
     <!-- 声明并引入依赖   所有子模块都需要的依赖  -->
