@@ -5,16 +5,25 @@ import com.alibaba.fastjson.JSONObject;
 import com.alibaba.ververica.cdc.connectors.mysql.MySQLSource;
 import com.alibaba.ververica.cdc.connectors.mysql.table.StartupOptions;
 import com.alibaba.ververica.cdc.debezium.DebeziumSourceFunction;
+import com.atguigu.app.func.DimSink;
 import com.atguigu.app.func.MyDebeziumDeserializationSchema;
 import com.atguigu.app.func.TableProcessFunction;
 import com.atguigu.bean.TableProcess;
 import com.atguigu.utils.MyKafkaUtil;
 import org.apache.flink.api.common.functions.FilterFunction;
 import org.apache.flink.api.common.state.MapStateDescriptor;
+import org.apache.flink.connector.jdbc.JdbcSink;
 import org.apache.flink.streaming.api.datastream.*;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.connectors.kafka.KafkaSerializationSchema;
 import org.apache.flink.util.OutputTag;
+import org.apache.kafka.clients.producer.ProducerRecord;
 
+import javax.annotation.Nullable;
+
+
+//数据流: web/app -> ngnix -> 业务服务器 -> Mysql -> FlinkApp -> Kafka(ods) -> FlinkApp  -> Kafka/Phoenix
+//程  序:            mockDB             -> Mysql -> FlinkCDC -> Kafka(ZK)  -> BaseDbApp -> Kafka/Phoenix(HBase/HDFS)
 public class BaseDbApp {
 
     public static void main(String[] args) throws Exception {
@@ -74,16 +83,25 @@ public class BaseDbApp {
         //TODO 6.根据广播流中发送来的数据将主流分为 Kafka事实数据流 和 HBase维度数据流
         OutputTag<JSONObject> hbaseTag = new OutputTag<JSONObject>(TableProcess.SINK_TYPE_HBASE) {
         };
-        SingleOutputStreamOperator<JSONObject> result = connectDS.process(new TableProcessFunction(hbaseTag, mapStateDescriptor));
+        SingleOutputStreamOperator<JSONObject> kafkaDS = connectDS.process(new TableProcessFunction(hbaseTag, mapStateDescriptor));
 
         //打印测试
-        result.print("Kafka>>>>>>>>>>>");
-        DataStream<JSONObject> hbaseDS = result.getSideOutput(hbaseTag);
+        kafkaDS.print("Kafka>>>>>>>>>>>");
+        DataStream<JSONObject> hbaseDS = kafkaDS.getSideOutput(hbaseTag);
         hbaseDS.print("HBase>>>>>>>>>>>");
 
         //TODO 7.将HBase数据写入Phoenix
+        hbaseDS.addSink(new DimSink());
 
         //TODO 8.将Kafka数据写入Kafka
+        kafkaDS.addSink(MyKafkaUtil.getKafkaProducerWithSchema(new KafkaSerializationSchema<JSONObject>() {
+            //element:{"sinkTable":"dwd_xxx","database":"","tableName":"","type":"","data":{"id":"1",...},"before":{"id":"1001",...}}
+            @Override
+            public ProducerRecord<byte[], byte[]> serialize(JSONObject element, @Nullable Long timestamp) {
+                return new ProducerRecord<>(element.getString("sinkTable"),
+                        element.getString("data").getBytes());
+            }
+        }));
 
         //TODO 9.启动
         env.execute();

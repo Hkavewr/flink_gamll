@@ -138,7 +138,7 @@ public class TableProcessFunction extends BroadcastProcessFunction<JSONObject, S
 
             //3.分流
             //将sinkTable字段添加至数据中
-            //value.put("sinkTable", tableProcess.getSinkTable());
+            value.put("sinkTable", tableProcess.getSinkTable());
 
             if (TableProcess.SINK_TYPE_HBASE.equals(tableProcess.getSinkType())) {
                 //将数据写入侧输出流
